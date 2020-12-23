@@ -1,56 +1,53 @@
 package mmdb
 
-import "sync"
+import (
+	"sync"
+)
+
+func subLoader(wg *sync.WaitGroup, filename, keyName, valueName, valueNameBak string, out *ids) {
+	defer wg.Done()
+
+	if err := NewIDs(filename, keyName, valueName, valueNameBak, out); err != nil {
+		panic(err)
+	}
+}
 
 // LoadData load data from files
 func LoadData(cityFilename, cityIDFilename, countryFilename, countryIDFilename string) (*ipdb, *ipdb) {
 	wg := sync.WaitGroup{}
 
 	cityIDs := ids{}
-	go func(filename string, out *ids) {
-		wg.Add(1)
-		defer wg.Done()
-
-		var err error
-		out, err = NewIDs(filename, "geoname_id", "city_name")
-		if err != nil {
-			panic(err)
-		}
-	}(cityIDFilename, &cityIDs)
+	wg.Add(1)
+	go subLoader(&wg, cityIDFilename, "geoname_id", "city_name", "country_iso_code", &cityIDs)
 
 	countryIDs := ids{}
-	go func(filename string, out *ids) {
-		wg.Add(1)
-		defer wg.Done()
-
-		var err error
-		out, err = NewIDs(filename, "geoname_id", "country_name")
-		if err != nil {
-			panic(err)
-		}
-	}(countryIDFilename, &countryIDs)
+	wg.Add(1)
+	go subLoader(&wg, countryIDFilename, "geoname_id", "country_iso_code", "country_name", &countryIDs)
 
 	wg.Wait()
 
+	// fmt.Printf("%#v\n", countryIDs)
+	// os.Exit(1)
+
 	city := ipdb{}
+	wg.Add(1)
 	go func(filename string, in *ids, out *ipdb) {
-		wg.Add(1)
 		defer wg.Done()
 
 		var err error
-		out, err = NewDB(filename, "network", "geoname_id", in)
+		err = NewDB(filename, "network", "geoname_id", in, out)
 		if err != nil {
 			panic(err)
 		}
 	}(cityFilename, &cityIDs, &city)
 
 	country := ipdb{}
+	wg.Add(1)
 	go func(filename string, in *ids, out *ipdb) {
-		wg.Add(1)
 		defer wg.Done()
 
 		var err error
-		out, err = NewDB(filename, "network", "registered_country_geoname_id", in)
+		err = NewDB(filename, "network", "geoname_id", in, out)
 		if err != nil {
 			panic(err)
 		}

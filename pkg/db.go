@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 )
 
 type ipdb map[uint32]string
@@ -16,14 +17,15 @@ type Getter interface {
 	Get(string) string
 }
 
-func ip2uint32(ip net.IP) (u uint32) {
+func IP2uint32(ip net.IP) (u uint32) {
 	binary.Read(bytes.NewBuffer(ip), binary.BigEndian, &u)
 
 	return u
 }
 
 func (db *ipdb) put(ip, value string) {
-	k := ip2uint32(net.ParseIP(ip).To4())
+	ip = strings.Split(ip, "/")[0]
+	k := IP2uint32(net.ParseIP(ip).To4())
 	(*db)[k] = value
 }
 
@@ -39,7 +41,7 @@ func (db *ipdb) Get(ip string) string {
 
 		prevIP = netIP
 
-		if v, ok := (*db)[ip2uint32(netIP)]; ok {
+		if v, ok := (*db)[IP2uint32(netIP)]; ok {
 			return v
 		}
 	}
@@ -48,28 +50,27 @@ func (db *ipdb) Get(ip string) string {
 }
 
 // NewDB return ipdb object
-func NewDB(filename, csvKeyName, csvValueName string, ids *ids) (*ipdb, error) {
+func NewDB(filename, csvKeyName, csvValueName string, ids *ids, out *ipdb) error {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer file.Close()
 
-	parser := csv.NewReader(file)
-	db := ipdb{}
-
 	firstLine := true
+	var keyIdx, valueIdx int
+
+	parser := csv.NewReader(file)
 	for {
 		record, err := parser.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		var keyIdx, valueIdx int
 		if firstLine {
 			firstLine = false
 
@@ -82,8 +83,8 @@ func NewDB(filename, csvKeyName, csvValueName string, ids *ids) (*ipdb, error) {
 				}
 			}
 
-			if keyIdx == 0 || valueIdx == 0 {
-				return nil, fmt.Errorf("key_name(%d) or value_name(%d) invalid", keyIdx, valueIdx)
+			if record[keyIdx] != csvKeyName || record[valueIdx] != csvValueName {
+				return fmt.Errorf("key_name(%d:%s) or value_name(%d:%s) invalid", keyIdx, csvKeyName, valueIdx, csvValueName)
 			}
 
 			continue
@@ -92,23 +93,25 @@ func NewDB(filename, csvKeyName, csvValueName string, ids *ids) (*ipdb, error) {
 		k := record[keyIdx]
 		v := record[valueIdx]
 		if v == "" {
-			v = record[valueIdx-1]
+			v = record[valueIdx+1]
 		}
 
 		if k == "" || v == "" {
-			fmt.Printf("[WARN] empty data; k:%s; v:%s; %#v", k, v, record)
+			out.put(k, "unknown")
+			fmt.Printf("[WARN] UNKNOWN: %s\n", record[0])
 		} else {
-			v, ok, err := ids.Get(v)
+			val, ok, err := ids.Get(v)
 			if err != nil {
-				fmt.Printf("[WARN] err: %s", err)
+				fmt.Printf("[WARN] err: %d %s\n", valueIdx, err)
 			}
+
 			if ok {
-				db.put(k, v)
+				out.put(k, val)
 			} else {
-				fmt.Printf("[WARN] ids not found for id: %s", v)
+				fmt.Printf("[WARN] ids %s not found for id: %s\n", filename, v)
 			}
 		}
 	}
 
-	return &db, nil
+	return nil
 }

@@ -39,28 +39,27 @@ func (idx *ids) Get(id string) (string, bool, error) {
 }
 
 // NewIDs load IDs from CSV file
-func NewIDs(filename, csvKeyName, csvValueName string) (*ids, error) {
+func NewIDs(filename, csvKeyName, csvValueName, csvValueBak string, out *ids) error {
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer file.Close()
 
-	parser := csv.NewReader(file)
-	db := ids{}
-
 	firstLine := true
+	var keyIdx, valueIdx, valueIdxBak int
+
+	parser := csv.NewReader(file)
 	for {
 		record, err := parser.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		var keyIdx, valueIdx int
 		if firstLine {
 			firstLine = false
 
@@ -70,11 +69,13 @@ func NewIDs(filename, csvKeyName, csvValueName string) (*ids, error) {
 					keyIdx = i
 				case csvValueName:
 					valueIdx = i
+				case csvValueBak:
+					valueIdxBak = i
 				}
 			}
 
-			if keyIdx == 0 || valueIdx == 0 {
-				return nil, fmt.Errorf("key_name(%d) or value_name(%d) invalid", keyIdx, valueIdx)
+			if record[keyIdx] != csvKeyName || record[valueIdx] != csvValueName {
+				return fmt.Errorf("key_name(%d:%s) or value_name(%d:%s) invalid", keyIdx, csvKeyName, valueIdx, csvValueName)
 			}
 
 			continue
@@ -83,15 +84,21 @@ func NewIDs(filename, csvKeyName, csvValueName string) (*ids, error) {
 		k := record[keyIdx]
 		v := record[valueIdx]
 		if v == "" {
-			v = record[valueIdx-1]
+			v = record[valueIdxBak]
+		}
+
+		if v == "" {
+			v = record[2]
 		}
 
 		if k == "" || v == "" {
-			fmt.Printf("[WARN] empty data; k:%s; v:%s; %#v", k, v, record)
+			fmt.Printf("[WARN] %s empty data; k:(%d:%s); v:(%d:%s); %#v\n", filename, keyIdx, k, valueIdx, v, record)
 		} else {
-			db.put(k, v)
+			if err := out.put(k, v); err != nil {
+				fmt.Println("[ERR]", err)
+			}
 		}
 	}
 
-	return &db, nil
+	return nil
 }
