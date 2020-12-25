@@ -5,37 +5,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 )
 
 type ids map[uint32]string
 
-func parseUint32(s string) (uint32, error) {
-	_id, err := strconv.ParseUint(s, 10, 32)
-	if err != nil {
-		return uint32(0), err
-	}
-
-	return uint32(_id), nil
+func (idx *ids) put(id, value string) {
+	(*idx)[parseUint32(id)] = value
 }
 
-func (idx *ids) put(id, value string) error {
-	_id, err := parseUint32(id)
-	if err == nil {
-		(*idx)[_id] = value
-	}
-
-	return err
-}
-
-func (idx *ids) Get(id string) (string, bool, error) {
-	_id, err := parseUint32(id)
-	if err != nil {
-		return "", false, err
-	}
-
-	v, ok := (*idx)[_id]
-	return v, ok, nil
+func (idx *ids) Get(id string) (string, bool) {
+	v, ok := (*idx)[parseUint32(id)]
+	return v, ok
 }
 
 // NewIDs load IDs from CSV file
@@ -87,6 +67,7 @@ func NewIDs(filename, csvKeyName, csvValueName, csvValueBak string, out *ids) er
 			v = record[valueIdxBak]
 		}
 
+		// TODO: remove kludge
 		if v == "" {
 			v = record[2]
 		}
@@ -94,9 +75,7 @@ func NewIDs(filename, csvKeyName, csvValueName, csvValueBak string, out *ids) er
 		if k == "" || v == "" {
 			fmt.Printf("[WARN] %s empty data; k:(%d:%s); v:(%d:%s); %#v\n", filename, keyIdx, k, valueIdx, v, record)
 		} else {
-			if err := out.put(k, v); err != nil {
-				fmt.Println("[ERR]", err)
-			}
+			out.put(k, v)
 		}
 	}
 

@@ -1,8 +1,6 @@
 package mmdb
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -17,32 +15,30 @@ type Getter interface {
 	Get(string) string
 }
 
-func IP2uint32(ip net.IP) (u uint32) {
-	binary.Read(bytes.NewBuffer(ip), binary.BigEndian, &u)
-
-	return u
+func IP2uint32(ip net.IP) uint32 {
+	return uint32(ip[3]) | uint32(ip[2])<<8 | uint32(ip[1])<<16 | uint32(ip[0])<<24
 }
 
 func (db *ipdb) put(ip, value string) {
-	ip = strings.Split(ip, "/")[0]
-	k := IP2uint32(net.ParseIP(ip).To4())
+	i := strings.IndexByte(ip, '/')
+	k := IP2uint32(parseIPv4(ip[:i]))
 	(*db)[k] = value
 }
 
-func (db *ipdb) Get(ip string) string {
-	var prevIP net.IP
+func (db *ipdb) Get(s string) string {
+	var prevIP string
+
+	ip := parseIPv4(s)
 	for i := 32; i > 1; i-- {
-		_, ipnet, _ := net.ParseCIDR(fmt.Sprintf("%s/%d", ip, i))
-		netIP := ipnet.IP.To4()
+		netIP := ip.Mask(net.CIDRMask(i, 8*net.IPv4len))
 
-		if netIP.Equal(prevIP) {
-			continue
-		}
+		netIPstr := netIP.String()
+		if prevIP != netIPstr {
+			if v, ok := (*db)[IP2uint32(netIP)]; ok {
+				return v
+			}
 
-		prevIP = netIP
-
-		if v, ok := (*db)[IP2uint32(netIP)]; ok {
-			return v
+			prevIP = netIPstr
 		}
 	}
 
@@ -96,21 +92,14 @@ func NewDB(filename, csvKeyName, csvValueName string, ids *ids, out *ipdb) error
 			v = record[valueIdx+1]
 		}
 
-		if k == "" || v == "" {
-			out.put(k, "unknown")
+		val, ok := ids.Get(v)
+		if !ok {
+			val = "unknown"
 			fmt.Printf("[WARN] UNKNOWN: %s\n", record[0])
-		} else {
-			val, ok, err := ids.Get(v)
-			if err != nil {
-				fmt.Printf("[WARN] err: %d %s\n", valueIdx, err)
-			}
-
-			if ok {
-				out.put(k, val)
-			} else {
-				fmt.Printf("[WARN] ids %s not found for id: %s\n", filename, v)
-			}
 		}
+
+		out.put(k, val)
+
 	}
 
 	return nil

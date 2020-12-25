@@ -26,9 +26,6 @@ func LoadData(cityFilename, cityIDFilename, countryFilename, countryIDFilename s
 
 	wg.Wait()
 
-	// fmt.Printf("%#v\n", countryIDs)
-	// os.Exit(1)
-
 	city := ipdb{}
 	wg.Add(1)
 	go func(filename string, in *ids, out *ipdb) {
